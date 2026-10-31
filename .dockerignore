@@ -1,0 +1,16 @@
+.git
+.github
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+lightning_logs/
+preprocess/
+cfgs/
+git_docker.pdf
+upload_to_hf.py
+load_trained_model.py
+requirements.txt
+hdf5_data/
+

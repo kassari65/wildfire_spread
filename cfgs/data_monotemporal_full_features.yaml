@@ -1,0 +1,10 @@
+data_dir: hdf5_data
+batch_size: 16
+n_leading_observations: 1
+crop_side_length: 64
+load_from_hdf5: true
+num_workers: 0
+remove_duplicate_features: true
+features_to_keep: null
+n_leading_observations_test_adjustment: 5
+non_outlier_indices_path: data/non_outlier_indices.npy

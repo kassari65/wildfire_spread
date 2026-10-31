@@ -1,0 +1,11 @@
+data_dir: hdf5_data
+batch_size: 16
+n_leading_observations: 5
+crop_side_length: 64
+load_from_hdf5: true
+num_workers: 0
+remove_duplicate_features: false
+n_leading_observations_test_adjustment: 5
+features_to_keep: null
+return_doy: true
+non_outlier_indices_path: null

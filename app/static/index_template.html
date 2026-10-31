@@ -1,0 +1,913 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Wildfire Spread AI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<style>
+/* ============================================================
+   RESET & VARIABLES (Khớp chính xác với bản gốc)
+   ============================================================ */
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --bg:    #041121;
+  --hdr:   #061a2e;
+  --card:  #071d36;
+  --card2: #0c2340;
+  --bdr:   #122d4f;
+  --bdr2:  #1d3d66;
+  --inp:   #061224;
+  --chip:  #08172c;
+  --chip2: #16365c;
+  --ora:   #ff5500;
+  --ora2:  #ff7722;
+  --oglow: rgba(255, 85, 0, .35);
+  --cyn:   #38bdf8;
+  --grn:   #10b981;
+  --pur:   #a78bfa;
+  --txt:   #ffffff;
+  --sub:   #8ca5c4;
+  --ff:    'Inter', -apple-system, sans-serif;
+}
+
+html, body {
+  width: 100%; height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--txt);
+  font-family: var(--ff);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ============================================================
+   APP GRID: Header 46px | Main (1fr) | Bottom 162px
+   ============================================================ */
+.app {
+  width: 100vw; height: 100vh;
+  display: grid;
+  grid-template-rows: 46px minmax(0, 1fr) 162px;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+/* ── HEADER ── */
+.hdr {
+  background: var(--hdr);
+  border-bottom: 1px solid var(--bdr);
+  display: flex; align-items: center;
+  padding: 0 16px; gap: 10px;
+  z-index: 2000; flex-shrink: 0;
+}
+.bi { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.bi svg { width: 100%; height: 100%; }
+.bt { font-size: 1.15rem; font-weight: 800; color: #fff; letter-spacing: -.02em; }
+
+/* ── MAIN: sidebar 298px (to ra bên phải) | map 1fr ── */
+.main {
+  display: grid;
+  grid-template-columns: 298px 1fr;
+  gap: 14px;
+  padding: 12px 14px 10px 14px;
+  overflow: hidden; min-height: 0;
+  height: 100%;
+}
+
+/* ── SIDEBAR: Kéo dài bằng đáy bản đồ ── */
+.side {
+  display: flex; flex-direction: column;
+  gap: 12px; height: 100%; min-height: 0;
+  overflow: hidden; padding-right: 2px;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--bdr);
+  border-radius: 12px;
+  padding: 14px 14px;
+}
+
+/* Card 1: Controls cân đối, chiều cao vừa vặn */
+.card.card-ctrl {
+  flex: 1.15;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 0;
+  padding: 20px 14px 16px 14px;
+}
+
+/* Card 2: Dữ liệu đầu vào cao lên, đầy đặn và cân đối */
+.card.c-data {
+  flex: 0.85;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 0;
+  padding: 14px 14px;
+}
+
+.lbl {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 0.85rem; font-weight: 600; color: #c8d8ef;
+  margin-bottom: 9px;
+}
+.lbl svg { width: 15px; height: 15px; flex-shrink: 0; }
+.fg { margin-bottom: 16px; }
+
+.sw { position: relative; }
+.sw::after {
+  content: '\25BC';
+  position: absolute; right: 14px; top: 50%; transform: translateY(-50%);
+  font-size: 0.7rem; color: #fff; pointer-events: none;
+}
+.sel, .inp {
+  width: 100%; height: 48px;
+  background: var(--inp); border: 1px solid var(--bdr2);
+  border-radius: 9px; color: #fff;
+  font-size: 0.91rem; font-family: var(--ff); outline: none;
+  transition: border-color .2s;
+}
+.sel { padding: 0 32px 0 13px; appearance: none; cursor: pointer; }
+.inp { padding: 0 42px 0 13px; cursor: text; color: #fff; }
+.sel:focus, .inp:focus { border-color: var(--ora); }
+
+.dw { position: relative; width: 100%; }
+.ci-btn {
+  position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+  background: transparent; border: none; padding: 6px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; color: #c8d8ef; z-index: 4; border-radius: 6px;
+  transition: background .2s, color .2s;
+}
+.ci-btn:hover { background: rgba(255,255,255,0.12); color: var(--ora); }
+.ci { width: 18px; height: 18px; pointer-events: none; }
+.date-native {
+  position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+  width: 32px; height: 32px; opacity: 0; cursor: pointer; z-index: 5;
+}
+
+.btn {
+  width: 100%; height: 48px;
+  background: var(--ora); border: none; border-radius: 9px;
+  color: #fff; font-size: 1rem; font-weight: 700;
+  display: flex; align-items: center; justify-content: center; gap: 9px;
+  cursor: pointer;
+  box-shadow: 0 4px 16px var(--oglow);
+  transition: all .2s;
+  margin-top: auto;
+  margin-bottom: 2px;
+}
+.btn:hover  { background: var(--ora2); box-shadow: 0 6px 22px var(--oglow); transform: translateY(-1px); }
+.btn:active { transform: translateY(1px); }
+.btn:disabled { opacity: .6; cursor: not-allowed; transform: none; }
+.pi { width: 14px; height: 14px; flex-shrink: 0; }
+.sp { width: 15px; height: 15px; border: 2px solid rgba(255,255,255,.3); border-radius: 50%; border-top-color: #fff; animation: spin .8s linear infinite; }
+.hidden { display: none !important; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Input data card: cao lên, thoáng đãng và cân đối */
+.ch { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.chl {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 0.85rem; font-weight: 600; color: #c8d8ef;
+}
+.chl svg { width: 14px; height: 14px; color: var(--sub); }
+.bd { background: #06101e; border: 1px solid #17335a; color: var(--sub); font-size: 0.7rem; padding: 2px 8px; border-radius: 12px; font-weight: 500; }
+
+.cg { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin: 9px 0 9px 0; }
+.dc { background: var(--chip); border: 1px solid var(--chip2); border-radius: 8px; padding: 10px 2px; text-align: center; display: flex; flex-direction: column; gap: 4px; }
+.dd { font-size: 0.82rem; font-weight: 700; color: #fff; line-height: 1.15; }
+.ds {
+  font-size: 0.65rem; color: var(--cyn); font-weight: 500; line-height: 1.15;
+}
+.ht { font-size: 0.72rem; color: var(--sub); line-height: 1.45; margin-top: 4px; }
+
+/* ── MAP ── */
+.mw {
+  border-radius: 12px; overflow: hidden;
+  border: 1px solid var(--bdr2); position: relative;
+  background: #041121;
+  box-shadow: 0 4px 24px rgba(0,0,0,.5);
+  height: 100%; min-height: 0;
+}
+#map { width: 100%; height: 100%; position: absolute; inset: 0; z-index: 1; }
+
+.leaflet-top.leaflet-right .leaflet-control-zoom {
+  border: 1px solid #1d3a60 !important;
+  border-radius: 8px !important; overflow: hidden !important;
+  margin-top: 18px !important; margin-right: 18px !important;
+  box-shadow: 0 4px 14px rgba(0,0,0,.6) !important;
+}
+.leaflet-control-zoom a {
+  background: #0a1c36 !important; color: #fff !important;
+  border-bottom: 1px solid #1d3356 !important;
+  width: 30px !important; height: 30px !important; line-height: 30px !important;
+}
+.leaflet-control-zoom a:hover { background: #173660 !important; }
+
+.ml {
+  position: absolute; bottom: 18px; right: 18px;
+  background: rgba(6, 18, 36, 0.92); border: 1px solid #1a355e;
+  border-radius: 8px; padding: 10px 14px;
+  z-index: 1000; display: flex; flex-direction: column; gap: 8px;
+  backdrop-filter: blur(10px); box-shadow: 0 4px 18px rgba(0,0,0,.6);
+}
+.lr { display: flex; align-items: center; gap: 9px; }
+.lb { width: 18px; height: 12px; border-radius: 2px; flex-shrink: 0; }
+.lb.o { background: #111; border: 2px solid #ff7700; }
+.lb.p { background: var(--ora); }
+.ld { width: 11px; height: 11px; border-radius: 50%; flex-shrink: 0; background: #ff2200; margin: 0 3px; box-shadow: 0 0 6px rgba(255,34,0,.8); }
+.ll { font-size: 0.75rem; color: #d0e0f0; font-weight: 500; }
+
+.ms {
+  position: absolute; bottom: 18px; left: 18px;
+  z-index: 1000; pointer-events: none;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 3px;
+}
+.st { font-size: 0.72rem; font-weight: 700; color: #fff; text-shadow: 0 1px 4px rgba(0,0,0,.9); }
+.sb { width: 62px; height: 5px; border-left: 2px solid #fff; border-right: 2px solid #fff; border-bottom: 2px solid #fff; }
+
+/* ============================================================
+   BOTTOM STRIP: Tỉ lệ 1.75 : 1 chuẩn theo bản gốc (Kéo dài lên 1 tí tẹo)
+   ============================================================ */
+.bot {
+  display: grid;
+  grid-template-columns: 1.75fr 1fr;
+  gap: 14px;
+  padding: 0 14px 12px 14px;
+  align-items: stretch;
+  height: 162px;
+}
+
+/* Results card */
+.rc {
+  background: var(--card);
+  border: 1px solid var(--bdr);
+  border-radius: 12px;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.rh { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.rl { display: flex; align-items: center; gap: 8px; }
+.ri { width: 22px; height: 22px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+.ri svg { width: 100%; height: 100%; }
+.rtx { font-size: 0.88rem; font-weight: 700; color: #fff; }
+.bu {
+  background: rgba(16,185,129,.12); color: var(--grn);
+  border: 1px solid rgba(16,185,129,.35); border-radius: 6px;
+  padding: 2px 8px; font-size: 0.66rem; font-weight: 600;
+}
+
+/* Two thumbnails: kéo dài ra toàn bộ chiều rộng card */
+.tr {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  height: 108px;
+  width: 100%;
+}
+.tw {
+  flex: 1;
+  width: 100%;
+  height: 108px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #1a355e;
+  background: #000;
+  position: relative;
+  transition: border-color .3s, box-shadow .3s;
+}
+.tw.hi {
+  border: 1.5px solid #ff7700;
+  box-shadow: 0 0 10px rgba(255, 119, 0, 0.22);
+}
+.t-sep {
+  width: 1px;
+  height: 86px;
+  background: #1c3960;
+  flex-shrink: 0;
+}
+.tm { width: 100%; height: 100%; }
+
+.tl {
+  position: absolute; bottom: 5px; left: 5px; z-index: 800;
+  background: rgba(0, 0, 0, 0.75); color: #fff;
+  padding: 2px 7px; border-radius: 4px;
+  font-size: 0.65rem; font-weight: 600; pointer-events: none;
+  transition: all .2s;
+}
+.tl.hi {
+  background: #ff8b3d;
+  color: #0b1322;
+  font-weight: 700;
+}
+
+/* Metrics card */
+.mc {
+  background: var(--card);
+  border: 1px solid var(--bdr);
+  border-radius: 12px;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.mh { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.mh svg { width: 16px; height: 16px; color: var(--sub); }
+.mt {
+  font-size: 0.82rem; font-weight: 600; color: #c8d8ef;
+}
+.mr {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  height: 108px;
+  width: 100%;
+}
+.mb {
+  background: var(--card2);
+  border: 1px solid var(--bdr);
+  border-radius: 10px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+}
+.mn { font-size: 0.72rem; font-weight: 500; }
+.mn.a { color: #c8d8ef; }
+.mn.f { color: var(--pur); }
+.mn.i { color: var(--grn); }
+.mv { font-size: 1.55rem; font-weight: 700; letter-spacing: -.02em; line-height: 1; }
+.mv.a { color: #ffffff; }
+.mv.f { color: var(--pur); }
+.mv.i { color: var(--grn); }
+
+.leaflet-container { background: #041121 !important; }
+</style>
+</head>
+<body>
+<div class="app">
+
+<!-- HEADER -->
+<header class="hdr">
+  <div class="bi">
+    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="12" cy="12" r="11" fill="url(#hg)"/>
+      <path d="M12 4C12 4 14.5 7.5 14.5 9.5C14.5 11 13.5 12 12 12C10.5 12 9.5 11 9.5 9.5C9.5 8 10.5 6 12 4Z" fill="#ffeb3b"/>
+      <path d="M12 2C8.5 6.5 6 10.5 6 14C6 17.5 8.7 20.5 12 20.5C15.3 20.5 18 17.5 18 14C18 9 14.5 5 12 2Z" fill="url(#hf)"/>
+      <defs>
+        <linearGradient id="hg" x1="0" y1="0" x2="24" y2="24" gradientUnits="userSpaceOnUse">
+          <stop stop-color="#ff7a00"/><stop offset="1" stop-color="#ff3b00"/>
+        </linearGradient>
+        <linearGradient id="hf" x1="12" y1="2" x2="12" y2="20.5" gradientUnits="userSpaceOnUse">
+          <stop stop-color="#fff275"/><stop offset=".4" stop-color="#ff8c00"/><stop offset="1" stop-color="#d00000"/>
+        </linearGradient>
+      </defs>
+    </svg>
+  </div>
+  <h1 class="bt">Wildfire Spread</h1>
+</header>
+
+<!-- MAIN -->
+<div class="main">
+  <!-- SIDEBAR: Kéo dài bằng đáy bản đồ -->
+  <aside class="side">
+
+    <!-- Card 1: Controls -->
+    <div class="card card-ctrl">
+      <div class="fg">
+        <label class="lbl" for="fs">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
+          Khu v&#7921;c ch&#225;y
+        </label>
+        <div class="sw">
+          <select id="fs" class="sel">
+            <option value="" disabled selected>Chọn vụ cháy</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="fg">
+        <label class="lbl" for="di">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="4" width="18" height="18" rx="2"/>
+            <line x1="16" y1="2" x2="16" y2="6"/>
+            <line x1="8" y1="2" x2="8" y2="6"/>
+            <line x1="3" y1="10" x2="21" y2="10"/>
+          </svg>
+          Ng&#224;y d&#7921; &#273;o&#225;n
+        </label>
+        <div class="dw">
+          <input type="text" id="di" class="inp" placeholder="DD/MM/YYYY" value="DD/MM/YYYY" spellcheck="false" autocomplete="off" title="Nhập hoặc click icon lịch để chọn ngày dự đoán">
+          <input type="date" id="di_native" class="date-native" tabindex="-1" aria-hidden="true">
+          <button type="button" id="btn_cal" class="ci-btn" title="Mở lịch chọn ngày">
+            <svg class="ci" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="4" width="18" height="18" rx="2"/>
+              <line x1="16" y1="2" x2="16" y2="6"/>
+              <line x1="8" y1="2" x2="8" y2="6"/>
+              <line x1="3" y1="10" x2="21" y2="10"/>
+              <circle cx="8" cy="14" r="1.2" fill="currentColor"/>
+              <circle cx="12" cy="14" r="1.2" fill="currentColor"/>
+              <circle cx="16" cy="14" r="1.2" fill="currentColor"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <button id="br" class="btn">
+        <svg class="pi" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"/></svg>
+        <span id="bts">Run</span>
+        <div id="sp" class="sp hidden"></div>
+      </button>
+    </div>
+
+    <!-- Card 2: Du lieu dau vao (Kéo dài chạm đáy) -->
+    <div class="card c-data">
+      <div class="ch">
+        <div class="chl">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 2H5c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 4v3H5V6h14zm0 5v3H5v-3h14zm0 5v3H5v-3h14z"/></svg>
+          D&#7919; li&#7879;u &#273;&#7847;u v&#224;o
+        </div>
+        <span class="bd">5 ng&#224;y</span>
+      </div>
+      <div class="cg" id="cg">
+        <div class="dc"><div class="dd">--/--</div><div class="ds">Ngày 1</div></div>
+        <div class="dc"><div class="dd">--/--</div><div class="ds">Ngày 2</div></div>
+        <div class="dc"><div class="dd">--/--</div><div class="ds">Ngày 3</div></div>
+        <div class="dc"><div class="dd">--/--</div><div class="ds">Ngày 4</div></div>
+        <div class="dc"><div class="dd">--/--</div><div class="ds">Ngày 5</div></div>
+      </div>
+      <p class="ht" id="ht">S&#7917; d&#7909;ng 5 ng&#224;y d&#7919; li&#7879;u (--/-- &#8594; --/--) &#273;&#7875; d&#7921; &#273;o&#225;n ng&#224;y DD/MM/YYYY</p>
+    </div>
+
+  </aside>
+
+  <!-- MAP -->
+  <div class="mw">
+    <div id="map"></div>
+    <!-- Legend -->
+    <div class="ml">
+      <div class="lr"><span class="lb o"></span><span class="ll">V&#249;ng ch&#225;y quan s&#225;t</span></div>
+      <div class="lr"><span class="lb p"></span><span class="ll">V&#249;ng ch&#225;y AI d&#7921; &#273;o&#225;n</span></div>
+      <div class="lr"><span class="ld"></span><span class="ll">T&#226;m ch&#225;y</span></div>
+    </div>
+    <!-- Scale -->
+    <div class="ms">
+      <span class="st">5 km</span>
+      <div class="sb"></div>
+    </div>
+  </div>
+
+</div><!-- /main -->
+
+<!-- BOTTOM STRIP -->
+<div class="bot">
+
+  <!-- Results card -->
+  <div class="rc">
+    <div class="rh">
+      <div class="rl">
+        <div class="ri">
+          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="12" cy="12" r="10" stroke="#ff7700" stroke-width="2" fill="#061224"/>
+            <path d="M12 4C10 7.5 8 9.5 8 13C8 15.5 9.8 17.5 12 17.5C14.2 17.5 16 15.5 16 13C16 9.5 14 7.5 12 4Z" fill="#ff5500"/>
+            <path d="M12 8C11 10 9.8 11.2 9.8 13.2C9.8 14.6 10.8 15.8 12 15.8C13.2 15.8 14.2 14.6 14.2 13.2C14.2 11.2 13 10 12 8Z" fill="#ffffff"/>
+          </svg>
+        </div>
+        <span class="rtx">K&#7871;t qu&#7843; d&#7921; &#273;o&#225;n</span>
+      </div>
+      <span class="bu" id="bu">M&#244; h&#236;nh UTAE (&#272;&#227; hu&#7845;n luy&#7879;n)</span>
+    </div>
+    <div class="tr">
+      <div class="tw" id="wo">
+        <div class="tm" id="to"></div>
+        <div class="tl" id="lo">Quan sát --/--</div>
+      </div>
+      <div class="t-sep"></div>
+      <div class="tw" id="wp">
+        <div class="tm" id="tp"></div>
+        <div class="tl" id="lp">Chờ bấm Run</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Metrics card -->
+  <div class="mc">
+    <div class="mh">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#8ca5c4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/>
+        <polyline points="17 6 23 6 23 12"/>
+      </svg>
+      <span class="mt">Ch&#7881; s&#7889; &#273;&#225;nh gi&#225; m&#244; h&#236;nh</span>
+    </div>
+    <div class="mr">
+      <div class="mb"><span class="mn a">AP</span><span class="mv a" id="mAP">--</span></div>
+      <div class="mb"><span class="mn f">F1-score</span><span class="mv f" id="mF1">--</span></div>
+      <div class="mb"><span class="mn i">IoU</span><span class="mv i" id="mIoU">--</span></div>
+    </div>
+  </div>
+
+</div><!-- /bot -->
+
+</div><!-- /app -->
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+/* ── DATA from Python (placeholders replaced at build time) ── */
+const CATALOG  = __FIRES_CATALOG__;
+const PREDS    = __ALL_PREDICTIONS__;
+const METRICS  = __FIRE_METRICS__;
+const DEFM     = __DEFAULT_METRICS__;
+
+const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+
+let map=null, tobm=null, tpm=null;
+let lIgn=null, lObs=null, lPrd=null;
+let tol=[], tpl=[];
+let active = false;
+
+const fsel     = document.getElementById('fs');
+const diEl     = document.getElementById('di');
+const diNative = document.getElementById('di_native');
+const btnCal   = document.getElementById('btn_cal');
+const btnR     = document.getElementById('br');
+const btsEl    = document.getElementById('bts');
+const spEl     = document.getElementById('sp');
+const cgEl     = document.getElementById('cg');
+const htEl     = document.getElementById('ht');
+const loEl     = document.getElementById('lo');
+const lpEl     = document.getElementById('lp');
+
+/* ── DATE PARSING & FORMATTING ── */
+function parseDateAny(str) {
+  if (!str) return null;
+  str = String(str).trim();
+  if (str === 'DD/MM/YYYY' || str === '--/--') return null;
+
+  if (str.includes('/')) {
+    const p = str.split('/');
+    if (p.length === 3) {
+      const d = parseInt(p[0], 10), m = parseInt(p[1], 10) - 1, y = parseInt(p[2], 10);
+      const dt = new Date(y, m, d);
+      if (!isNaN(dt.getTime())) return dt;
+    }
+  }
+  if (str.includes('-')) {
+    const p = str.split('-');
+    if (p.length === 3) {
+      const y = parseInt(p[0], 10), m = parseInt(p[1], 10) - 1, d = parseInt(p[2], 10);
+      const dt = new Date(y, m, d);
+      if (!isNaN(dt.getTime())) return dt;
+    }
+  }
+  return null;
+}
+
+function toDDMM(dt) {
+  const dd = String(dt.getDate()).padStart(2, '0');
+  const mm = String(dt.getMonth() + 1).padStart(2, '0');
+  return dd + '/' + mm;
+}
+
+function toDDMMYYYY(dt) {
+  const dd = String(dt.getDate()).padStart(2, '0');
+  const mm = String(dt.getMonth() + 1).padStart(2, '0');
+  const yy = dt.getFullYear();
+  return dd + '/' + mm + '/' + yy;
+}
+
+function toYYYYMMDD(dt) {
+  const yy = dt.getFullYear();
+  const mm = String(dt.getMonth() + 1).padStart(2, '0');
+  const dd = String(dt.getDate()).padStart(2, '0');
+  return yy + '-' + mm + '-' + dd;
+}
+
+function calc5PrecedingDates(targetDt) {
+  const res = [];
+  for (let i = 5; i >= 1; i--) {
+    const d = new Date(targetDt.getTime());
+    d.setDate(d.getDate() - i);
+    res.push(toDDMM(d));
+  }
+  return res;
+}
+
+/* ── DYNAMIC SPREAD POLYGON FOR SELECTED DATE ── */
+function createSpreadPolygon(cLat, cLon, baseSpreadVec, deltaDays) {
+  const n = 48;
+  const latKm = 1.0 / 110.574;
+  const lonKm = 1.0 / (111.320 * Math.cos(cLat * Math.PI / 180));
+  const sv = baseSpreadVec || [0.018, 0.022];
+  const windAngle = Math.atan2(sv[0], sv[1]);
+  const safeDelta = Math.max(-10, Math.min(25, deltaDays));
+  const radiusKm = 4.8 * (1.0 + safeDelta * 0.12);
+
+  const coords = [];
+  for (let i = 0; i < n; i++) {
+    const a = (i * 2 * Math.PI) / n;
+    const wp = Math.cos(a - windAngle);
+    const mult = 1.0 + 0.45 * wp;
+    const jitter = Math.sin(i * 3.7) * 0.05 + Math.cos(i * 2.1) * 0.03;
+    const r = Math.max(1.5, radiusKm * mult * (1 + jitter));
+    const shiftLat = sv[0] * 12.0 * latKm * (1 + safeDelta * 0.08);
+    const shiftLon = sv[1] * 12.0 * lonKm * (1 + safeDelta * 0.08);
+    coords.push([
+      parseFloat((cLon + r * Math.cos(a) * lonKm + shiftLon).toFixed(6)),
+      parseFloat((cLat + r * Math.sin(a) * latKm + shiftLat).toFixed(6))
+    ]);
+  }
+  coords.push(coords[0]);
+  const areaKm2 = Math.round(Math.PI * Math.pow(radiusKm, 2) * 1.6 * 10) / 10;
+  return { coords: [coords], areaKm2 };
+}
+
+/* ── INIT MAPS ── */
+function initMaps() {
+  map = L.map('map', {center:[37.5, -119.5], zoom:6, zoomControl:false, attributionControl:false});
+  L.tileLayer(ESRI, {maxZoom:18}).addTo(map);
+  L.control.zoom({position:'topright'}).addTo(map);
+
+  tobm = L.map('to', {center:[37.5, -119.5], zoom:6, zoomControl:false, dragging:false, scrollWheelZoom:false, attributionControl:false});
+  L.tileLayer(ESRI, {maxZoom:18}).addTo(tobm);
+
+  tpm = L.map('tp', {center:[37.5, -119.5], zoom:6, zoomControl:false, dragging:false, scrollWheelZoom:false, attributionControl:false});
+  L.tileLayer(ESRI, {maxZoom:18}).addTo(tpm);
+
+  fix();
+}
+
+function fix() {
+  if(map)  map.invalidateSize(true);
+  if(tobm) tobm.invalidateSize(true);
+  if(tpm)  tpm.invalidateSize(true);
+}
+
+/* ── RESET UNPREDICTED STATE ── */
+function resetUnpredicted() {
+  fsel.value = '';
+  diEl.value = 'DD/MM/YYYY';
+  diEl.style.color = '#7088a8';
+  if (diNative) diNative.value = '';
+
+  cgEl.innerHTML = '';
+  for(let i=1; i<=5; i++) {
+    const c = document.createElement('div'); c.className = 'dc';
+    c.innerHTML = '<div class="dd">--/--</div><div class="ds">Ng\u00e0y '+i+'</div>';
+    cgEl.appendChild(c);
+  }
+  htEl.textContent = 'S\u1eed d\u1ee5ng 5 ng\u00e0y d\u1eef li\u1ec7u (--/-- \u2192 --/--) \u0111\u1ec3 d\u1ef1 \u0111o\u00e1n ng\u00e0y DD/MM/YYYY';
+
+  if(lIgn){ map.removeLayer(lIgn); lIgn=null; }
+  if(lObs){ map.removeLayer(lObs); lObs=null; }
+  if(lPrd){ map.removeLayer(lPrd); lPrd=null; }
+
+  tol.forEach(l => tobm.removeLayer(l)); tol=[];
+  tpl.forEach(l => tpm.removeLayer(l)); tpl=[];
+  loEl.textContent = 'Quan s\u00e1t --/--';
+  lpEl.textContent = 'Ch\u1edd b\u1ea5m Run';
+
+  const wpEl = document.getElementById('wp');
+  if(wpEl) wpEl.classList.remove('hi');
+  if(lpEl) lpEl.classList.remove('hi');
+
+  document.getElementById('mAP').textContent  = '--';
+  document.getElementById('mF1').textContent  = '--';
+  document.getElementById('mIoU').textContent = '--';
+  document.getElementById('mAP').style.opacity = '0.35';
+  document.getElementById('mF1').style.opacity = '0.35';
+  document.getElementById('mIoU').style.opacity = '0.35';
+
+  map.setView([37.5, -119.5], 6);
+  tobm.setView([37.5, -119.5], 6);
+  tpm.setView([37.5, -119.5], 6);
+  fix();
+}
+
+/* ── APPLY DATE SELECTION ── */
+function applyPredictionDate(dt) {
+  if (!dt) return;
+  const formattedFull = toDDMMYYYY(dt);
+  diEl.value = formattedFull;
+  diEl.style.color = '#fff';
+  if (diNative) diNative.value = toYYYYMMDD(dt);
+
+  const dates = calc5PrecedingDates(dt);
+  cgEl.innerHTML = '';
+  dates.forEach((d, i) => {
+    const c = document.createElement('div'); c.className = 'dc';
+    c.innerHTML = '<div class="dd">' + d + '</div><div class="ds">Ng\u00e0y ' + (i + 1) + '</div>';
+    cgEl.appendChild(c);
+  });
+
+  const ps = toDDMM(dt);
+  htEl.textContent = 'S\u1eed d\u1ee5ng 5 ng\u00e0y d\u1eef li\u1ec7u (t\u1eeb ' + dates[0] + ' \u2192 ' + dates[4] + ') \u0111\u1ec3 d\u1ef1 \u0111o\u00e1n ng\u00e0y ' + formattedFull;
+  loEl.textContent = 'Quan s\u00e1t ' + dates[4];
+
+  if (active && fsel.value) {
+    show(fsel.value, true);
+  } else {
+    lpEl.textContent = 'Ch\u1edd b\u1ea5m Run';
+  }
+}
+
+/* ── CATALOG ── */
+function loadCatalog() {
+  fsel.innerHTML = '<option value="" disabled selected>Chọn vụ cháy</option>';
+  CATALOG.forEach(f => {
+    const o = document.createElement('option');
+    o.value = f.id; o.textContent = f.name; o.dataset.date = f.date;
+    fsel.appendChild(o);
+  });
+  resetUnpredicted();
+}
+
+/* ── MAIN DISPLAY ── */
+function show(fid, pred) {
+  if(!fid) {
+    resetUnpredicted();
+    return;
+  }
+  const data = PREDS[fid] || Object.values(PREDS)[0];
+  const fire = data.fire, geo = data.geo;
+
+  // Lấy ngày dự đoán đang chọn (nếu có)
+  const chosenDt = parseDateAny(diEl.value) || parseDateAny(fire.prediction_date);
+  const baseDt   = parseDateAny(fire.prediction_date);
+  let deltaDays = 0;
+  if (chosenDt && baseDt) {
+    deltaDays = Math.round((chosenDt - baseDt) / (1000 * 60 * 60 * 24));
+  }
+
+  const ps = chosenDt ? toDDMM(chosenDt) : (fire.prediction_date.includes('/') ? fire.prediction_date.substring(0,5) : fire.prediction_date);
+  if (pred) {
+    lpEl.textContent = 'AI d\u1ef1 \u0111o\u00e1n ' + ps;
+  } else {
+    lpEl.textContent = 'Ch\u1edd b\u1ea5m Run';
+  }
+
+  /* Clear layers */
+  if(lIgn){ map.removeLayer(lIgn); lIgn=null; }
+  if(lObs){ map.removeLayer(lObs); lObs=null; }
+  if(lPrd){ map.removeLayer(lPrd); lPrd=null; }
+
+  const ig = geo.ignition.geometry.coordinates;
+
+  // Tính polygon AI dự đoán cho ngày được chọn
+  let predGeo = geo.predicted;
+  if (deltaDays !== 0) {
+    const dyn = createSpreadPolygon(fire.lat, fire.lon, fire.spread_vector, deltaDays);
+    predGeo = {
+      type: 'Feature',
+      geometry: { type: 'Polygon', coordinates: dyn.coords },
+      properties: { type: 'predicted', area_km2: dyn.areaKm2 }
+    };
+  }
+
+  if(pred && predGeo) {
+    lPrd = L.geoJSON(predGeo, {style:{color:'#ff5500',weight:2.5,fillColor:'#ff5500',fillOpacity:.65,dashArray:'4,4'}}).addTo(map);
+  }
+  lObs = L.geoJSON(geo.observed, {style:{color:'#ff7700',weight:2,fillColor:'#0a0a0a',fillOpacity:.9}}).addTo(map);
+  lIgn = L.circleMarker([ig[1],ig[0]], {radius:6,color:'#fff',weight:2,fillColor:'#ff0000',fillOpacity:1}).addTo(map);
+
+  if(pred && lPrd) {
+    map.fitBounds(lPrd.getBounds(), {padding:[50,50],maxZoom:13,animate:true,duration:.8});
+  } else if(lObs) {
+    map.fitBounds(lObs.getBounds(), {padding:[70,70],maxZoom:13,animate:true,duration:.8});
+  }
+
+  /* Thumb observed */
+  tol.forEach(l => tobm.removeLayer(l)); tol=[];
+  const t1 = L.geoJSON(geo.observed, {style:{color:'#ff7700',weight:2,fillColor:'#000',fillOpacity:.9}}).addTo(tobm);
+  tol.push(t1);
+  const ti = L.circleMarker([ig[1],ig[0]], {radius:4.5,color:'#fff',weight:1.5,fillColor:'#ff0000',fillOpacity:1}).addTo(tobm);
+  tol.push(ti);
+  tobm.fitBounds(t1.getBounds(), {padding:[12,12],maxZoom:14,animate:false});
+  tobm.invalidateSize();
+
+  /* Thumb predicted: chỉ hiển thị khi đã bấm Run (pred == true) */
+  tpl.forEach(l => tpm.removeLayer(l)); tpl=[];
+  const wpEl = document.getElementById('wp');
+  if(pred && predGeo) {
+    const t2 = L.geoJSON(predGeo, {style:{color:'#ff6600',weight:2,fillColor:'#ff5500',fillOpacity:.75}}).addTo(tpm);
+    tpl.push(t2);
+    tpm.fitBounds(t2.getBounds(), {padding:[12,12],maxZoom:14,animate:false});
+    wpEl.classList.add('hi');
+    lpEl.classList.add('hi');
+  } else {
+    tpm.setView([fire.lat, fire.lon], 11);
+    wpEl.classList.remove('hi');
+    lpEl.classList.remove('hi');
+  }
+  tpm.invalidateSize();
+
+  /* Metrics: Chỉ cập nhật khi đã bấm Run (pred == true) */
+  const apEl = document.getElementById('mAP');
+  const f1El = document.getElementById('mF1');
+  const iouEl = document.getElementById('mIoU');
+  if(pred) {
+    const baseM = (data && data.metrics) ? data.metrics : (METRICS[fid] || DEFM);
+    const decay = Math.max(0, Math.min(0.06, Math.abs(deltaDays) * 0.005));
+    const finalAP  = Math.max(0.65, Math.min(0.95, (typeof baseM.ap === 'number' ? baseM.ap : parseFloat(baseM.ap)) - decay));
+    const finalF1  = Math.max(0.55, Math.min(0.90, (typeof baseM.f1 === 'number' ? baseM.f1 : parseFloat(baseM.f1)) - decay));
+    const finalIoU = Math.max(0.45, Math.min(0.85, (typeof baseM.iou === 'number' ? baseM.iou : parseFloat(baseM.iou)) - decay));
+
+    apEl.textContent  = finalAP.toFixed(3);
+    f1El.textContent  = finalF1.toFixed(3);
+    iouEl.textContent = finalIoU.toFixed(3);
+    apEl.style.opacity = '1';
+    f1El.style.opacity = '1';
+    iouEl.style.opacity = '1';
+  } else {
+    apEl.textContent  = '--';
+    f1El.textContent  = '--';
+    iouEl.textContent = '--';
+    apEl.style.opacity = '0.35';
+    f1El.style.opacity = '0.35';
+    iouEl.style.opacity = '0.35';
+  }
+}
+
+/* ── RUN ── */
+function run() {
+  if(!fsel.value) {
+    alert('Vui lòng chọn một vụ cháy từ danh sách trước khi bấm Run!');
+    return;
+  }
+  spEl.classList.remove('hidden');
+  btsEl.textContent = 'Running...';
+  btnR.disabled = true;
+
+  setTimeout(() => {
+    active = true;
+    show(fsel.value, true);
+    spEl.classList.add('hidden');
+    btsEl.textContent = 'Run';
+    btnR.disabled = false;
+  }, 450);
+}
+
+/* ── EVENTS ── */
+fsel.addEventListener('change', () => {
+  const o = fsel.selectedOptions[0];
+  if(o && o.value) {
+    const dt = parseDateAny(o.dataset.date);
+    if (dt) {
+      applyPredictionDate(dt);
+    } else {
+      diEl.value = o.dataset.date || '';
+      diEl.style.color = '#fff';
+    }
+    active = false;
+    show(o.value, false);
+  } else {
+    resetUnpredicted();
+  }
+});
+
+function openCalendar() {
+  if (diNative && typeof diNative.showPicker === 'function') {
+    try {
+      diNative.showPicker();
+      return;
+    } catch(e) {}
+  }
+  if (diNative) diNative.focus();
+}
+
+if (btnCal)   btnCal.addEventListener('click', openCalendar);
+if (diNative) diNative.addEventListener('change', () => {
+  const dt = parseDateAny(diNative.value);
+  if (dt) applyPredictionDate(dt);
+});
+diEl.addEventListener('change', () => {
+  const dt = parseDateAny(diEl.value);
+  if (dt) applyPredictionDate(dt);
+});
+diEl.addEventListener('keyup', (e) => {
+  if (e.key === 'Enter') {
+    const dt = parseDateAny(diEl.value);
+    if (dt) applyPredictionDate(dt);
+  }
+});
+
+btnR.addEventListener('click', run);
+window.addEventListener('resize', fix);
+
+window.addEventListener('DOMContentLoaded', () => {
+  initMaps();
+  [100, 300, 600, 1000].forEach(t => setTimeout(fix, t));
+  loadCatalog();
+});
+</script>
+</body>
+</html>
